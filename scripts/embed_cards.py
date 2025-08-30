@@ -19,8 +19,13 @@ Notes:
 import argparse
 import json
 import math
+import os
 import sys
 from typing import Any, Dict, List, Optional
+
+
+def _is_quiet() -> bool:
+    return os.environ.get("EMBED_QUIET", "") == "1"
 
 
 def load_model(name: str):
@@ -29,7 +34,8 @@ def load_model(name: str):
         from sentence_transformers import SentenceTransformer  # type: ignore
         return ("st", SentenceTransformer(name))
     except Exception:
-        print("Sentence-Transformers unavailable or model not ST-compatible; falling back to transformers.", file=sys.stderr)
+        if not _is_quiet():
+            print("Sentence-Transformers unavailable or model not ST-compatible; falling back to transformers.", file=sys.stderr)
         try:
             from transformers import AutoTokenizer, AutoModel  # type: ignore
             import torch  # type: ignore
@@ -176,7 +182,11 @@ def main():
     try:
         from tqdm import tqdm  # type: ignore
     except Exception:
-        def tqdm(x, **kwargs):
+        def tqdm(x, **kwargs):  # type: ignore
+            return x
+    # Suppress progress bars in quiet mode
+    if _is_quiet():
+        def tqdm(x, **kwargs):  # type: ignore
             return x
 
     # Load Scryfall bulk JSON (list of card dicts)

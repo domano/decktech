@@ -45,14 +45,14 @@ while true; do
   OUTFILE="$OUTDIR/weaviate_batch.offset_${OFFSET}.json"
   echo "Embedding batch offset=$OFFSET limit=$BATCH -> $OUTFILE"
   if [ "$INCLUDE_NAME" = "1" ]; then
-    python3 scripts/embed_cards.py --scryfall-json "$SCRYFALL_JSON" --batch-out "$OUTFILE" --limit "$BATCH" --offset "$OFFSET" --checkpoint "$CHECKPOINT" --model "$MODEL" --include-name
+    EMBED_QUIET=1 python3 scripts/embed_cards.py --scryfall-json "$SCRYFALL_JSON" --batch-out "$OUTFILE" --limit "$BATCH" --offset "$OFFSET" --checkpoint "$CHECKPOINT" --model "$MODEL" --include-name
   else
-    python3 scripts/embed_cards.py --scryfall-json "$SCRYFALL_JSON" --batch-out "$OUTFILE" --limit "$BATCH" --offset "$OFFSET" --checkpoint "$CHECKPOINT" --model "$MODEL"
+    EMBED_QUIET=1 python3 scripts/embed_cards.py --scryfall-json "$SCRYFALL_JSON" --batch-out "$OUTFILE" --limit "$BATCH" --offset "$OFFSET" --checkpoint "$CHECKPOINT" --model "$MODEL"
   fi
 
-  COUNT=$(python3 - <<'PY'
-import json, os, sys
-f=os.environ.get('OUTFILE')
+  COUNT=$(python3 - "$OUTFILE" <<'PY'
+import json, sys
+f = sys.argv[1]
 try:
     with open(f,'r',encoding='utf-8') as fp:
         data=json.load(fp)
@@ -99,4 +99,3 @@ PY
 done
 
 echo "Done. Current checkpoint: $CHECKPOINT"
-

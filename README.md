@@ -47,6 +47,12 @@ More detail in ARCHITECTURE.md.
   - `go build -o ./similarityd ./cmd/similarityd`
   - `WEAVIATE_URL=http://localhost:8080 ./similarityd`
 
+- Optional: TUI for importing/batching
+  - Build: `go build -o decktech ./cmd/decktech`
+  - If dependencies are missing, run: `go mod tidy` (downloads Bubble Tea packages)
+  - Run: `./decktech`
+  - Keys: `↑/↓` navigate, `Enter` run, `Esc` back, `q` quit
+
 - Test the endpoint
   - Get a few names from DB: `curl -sS localhost:8080/v1/graphql -H 'content-type: application/json' -d '{"query":"{ Get { Card(limit: 3) { name _additional { id } } } }"}'`
   - Query similar: `curl -sS -X POST localhost:8088/similar -H 'content-type: application/json' -d '{"names":["Wings of Aesthir"],"k":5}'`
@@ -120,6 +126,7 @@ flowchart LR
   - `weaviate/schema.json`, `scripts/apply_schema.sh`, `ops/docker-compose.weaviate.yml`
 - Embeddings + ingestion:
   - `scripts/embed_cards.py`, `scripts/embed_batches.sh`, `scripts/ingest_batch.sh`
+- TUI importer: `cmd/decktech` (Bubble Tea)
 
 ## Decisions
 - Embedding model: `Alibaba-NLP/gte-modernbert-base`

@@ -6,7 +6,7 @@ This service recommends semantically similar Magic: The Gathering cards using te
 ```mermaid
 graph LR
   subgraph Client
-    U[User / CLI]
+    U[User / CLI/TUI]
   end
   subgraph Service
     S[Go REST Service]
@@ -131,6 +131,11 @@ Relevant code:
 - Environment:
   - `WEAVIATE_URL` for both service and scripts
   - `MODEL`, `INCLUDE_NAME`, `CHECKPOINT`, `OUTDIR` for embedding scripts
+
+TUI Orchestration
+- `cmd/decktech` provides a Bubble Tea CLI to run common workflows:
+  - Download Scryfall bulk, apply schema, single batch, continuous batches, edit config, show progress
+  - Streams script output and updates a progress bar from the checkpoint file
 
 ```mermaid
 stateDiagram-v2
