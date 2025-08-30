@@ -34,6 +34,10 @@
 - Example input string:
   - `Type: Instant\nManaCost: {R}\nColors: Red\nOracle: Lightning Bolt deals 3 damage to any target.`
 
+Mechanic‑Aware Tagging (enhancement):
+- Extract domain tags from `type_line` and `oracle_text` (e.g., `tutor`, `tutor_to_battlefield`, `attack_trigger`, `etb_trigger`, `mv_leq_3`, `type_enchantment`, `kw_aura`).
+- Inject tags into the embedding text, optionally repeated via `EMBED_TAGS_WEIGHT` to emphasize mechanics. This improves similarity for nuanced effects (e.g., Zur‑style attack‑triggered tutors).
+
 ## Embedding Generation
 - Model options (local/offline):
   - Fast: `all-MiniLM-L6-v2` (384 dims)
@@ -77,9 +81,15 @@
   - Environment:
     - `WEAVIATE_URL`: DB endpoint (default `http://localhost:8080`)
     - `MODEL`: override model name
+    - `EMBED_TAGS_WEIGHT`: emphasize mechanic tags (default 2; higher = stronger emphasis)
     - `CHECKPOINT`: where progress is stored (default `data/embedding_progress.json`)
     - `OUTDIR`: where batch files are written (default `data`)
     - `MAX_STEPS`: limit number of loops in one run (optional)
+
+UI Components (for local exploration):
+- TUI Importer (`cmd/decktech`): menu for Download, Apply Schema, Single/Continuous batches, Clean Embeddings, Re‑embed Full, Status, Config (Model/Batch/Tags weight/Include name).
+- TUI Browser (`cmd/deckbrowser`): search by name, browse with pagination, run “Similar” from a selection.
+- Web SSR (`cmd/web`): search, browse, detailed card page (images, legalities/keywords), and Similar results in browser.
 
 ## Decisions (confirmed)
 - Embedding model: `Alibaba-NLP/gte-modernbert-base`.

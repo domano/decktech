@@ -1,12 +1,10 @@
 package main
 
 import (
-    "bytes"
     "context"
     "encoding/json"
     "errors"
     "fmt"
-    "io"
     "log"
     "math"
     "net/http"
@@ -15,6 +13,8 @@ import (
     "strings"
     "syscall"
     "time"
+
+    client "github.com/domano/decktech/pkg/weaviateclient"
 )
 
 type SimilarRequest struct {
@@ -82,7 +82,8 @@ func main() {
         ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
         defer cancel()
 
-        vectors, ids, err := fetchVectorsForNames(ctx, weaviateURL, req.Names)
+        cli := client.NewClient(weaviateURL)
+        vectors, ids, err := fetchVectorsForNames(ctx, cli, req.Names)
         if err != nil {
             http.Error(w, err.Error(), http.StatusBadGateway)
             return
@@ -93,7 +94,7 @@ func main() {
         }
         qvec := averageVectors(vectors)
 
-        results, err := searchNearVector(ctx, weaviateURL, qvec, req.K)
+        resultsC, err := cli.SearchNearVector(ctx, qvec, req.K)
         if err != nil {
             log.Printf("/similar search error: %v", err)
             http.Error(w, err.Error(), http.StatusBadGateway)
@@ -105,14 +106,22 @@ func main() {
         for _, id := range ids {
             idset[id] = struct{}{}
         }
-        filtered := make([]CardResult, 0, len(results))
-        for _, cr := range results {
-            if _, ok := idset[cr.ID]; ok {
+        filtered := make([]CardResult, 0, len(resultsC))
+        for _, c := range resultsC {
+            if _, ok := idset[c.ID]; ok {
                 continue
             }
-            // Convert cosine distance to similarity (1 - distance)
-            cr.Similarity = 1.0 - cr.Distance
-            filtered = append(filtered, cr)
+            filtered = append(filtered, CardResult{
+                ID:          c.ID,
+                Name:        c.Name,
+                TypeLine:    c.TypeLine,
+                ManaCost:    c.ManaCost,
+                OracleText:  c.OracleText,
+                Colors:      c.Colors,
+                ImageNormal: c.ImageNormal,
+                Distance:    c.Distance,
+                Similarity:  c.Similarity,
+            })
         }
 
         w.Header().Set("Content-Type", "application/json")
@@ -140,7 +149,7 @@ func main() {
     _ = srv.Shutdown(ctx)
 }
 
-func fetchVectorsForNames(ctx context.Context, baseURL string, names []string) ([][]float64, []string, error) {
+func fetchVectorsForNames(ctx context.Context, cli *client.Client, names []string) ([][]float64, []string, error) {
     vectors := make([][]float64, 0, len(names))
     ids := make([]string, 0, len(names))
     for _, name := range names {
@@ -148,7 +157,7 @@ func fetchVectorsForNames(ctx context.Context, baseURL string, names []string) (
         if name == "" {
             continue
         }
-        vec, id, err := fetchVectorForName(ctx, baseURL, name)
+        vec, id, err := cli.FetchVectorForName(ctx, name)
         if err != nil {
             return nil, nil, fmt.Errorf("fetch vector for %q: %w", name, err)
         }
@@ -160,161 +169,7 @@ func fetchVectorsForNames(ctx context.Context, baseURL string, names []string) (
     }
     return vectors, ids, nil
 }
-
-func fetchVectorForName(ctx context.Context, baseURL, name string) ([]float64, string, error) {
-    // GraphQL query to get a Card by exact name with vector
-    // Limit 1; return _additional { id vector }
-    gql := fmt.Sprintf(`{
-  Get {
-    Card(where: {path: ["name"], operator: Equal, valueString: %q}, limit: 1) {
-      name
-      _additional { id vector }
-    }
-  }
-}`, name)
-    respData, err := doGraphQL(ctx, baseURL, gql)
-    if err != nil {
-        return nil, "", err
-    }
-
-    // Parse response
-    var outer struct {
-        Get struct {
-            Card []struct {
-                Name        string    `json:"name"`
-                Additional  struct {
-                    ID     string     `json:"id"`
-                    Vector []float64  `json:"vector"`
-                } `json:"_additional"`
-            } `json:"Card"`
-        } `json:"Get"`
-    }
-    if err := json.Unmarshal(respData, &outer); err != nil {
-        return nil, "", err
-    }
-    if len(outer.Get.Card) == 0 {
-        // Fallback to LIKE search (case-insensitive contains)
-        like := fmt.Sprintf("*%s*", name)
-        gql2 := fmt.Sprintf(`{
-  Get {
-    Card(where: {path: ["name"], operator: Like, valueText: %q}, limit: 1) {
-      name
-      _additional { id vector }
-    }
-  }
-}`, like)
-        resp2, err2 := doGraphQL(ctx, baseURL, gql2)
-        if err2 != nil {
-            return nil, "", fmt.Errorf("card not found: %s", name)
-        }
-        var outer2 struct {
-            Get struct {
-                Card []struct {
-                    Name       string   `json:"name"`
-                    Additional struct {
-                        ID     string    `json:"id"`
-                        Vector []float64 `json:"vector"`
-                    } `json:"_additional"`
-                } `json:"Card"`
-            } `json:"Get"`
-        }
-        if err := json.Unmarshal(resp2, &outer2); err != nil {
-            return nil, "", fmt.Errorf("card not found: %s", name)
-        }
-        if len(outer2.Get.Card) == 0 {
-            return nil, "", fmt.Errorf("card not found: %s", name)
-        }
-        c := outer2.Get.Card[0]
-        return c.Additional.Vector, c.Additional.ID, nil
-    }
-    c := outer.Get.Card[0]
-    return c.Additional.Vector, c.Additional.ID, nil
-}
-
-func searchNearVector(ctx context.Context, baseURL string, vector []float64, k int) ([]CardResult, error) {
-    // Build nearVector JSON array string
-    vb, _ := json.Marshal(vector)
-    gql := fmt.Sprintf(`{
-  Get {
-    Card(nearVector: { vector: %s }, limit: %d) {
-      name
-      type_line
-      mana_cost
-      oracle_text
-      colors
-      image_normal
-      _additional { id distance }
-    }
-  }
-}`, string(vb), k)
-    respData, err := doGraphQL(ctx, baseURL, gql)
-    if err != nil {
-        return nil, err
-    }
-    var outer struct {
-        Get struct {
-            Card []struct {
-                Name       string   `json:"name"`
-                TypeLine   string   `json:"type_line"`
-                ManaCost   string   `json:"mana_cost"`
-                OracleText string   `json:"oracle_text"`
-                Colors     []string `json:"colors"`
-                Image      string   `json:"image_normal"`
-                Additional struct {
-                    ID       string  `json:"id"`
-                    Distance float64 `json:"distance"`
-                } `json:"_additional"`
-            } `json:"Card"`
-        } `json:"Get"`
-    }
-    if err := json.Unmarshal(respData, &outer); err != nil {
-        return nil, err
-    }
-    res := make([]CardResult, 0, len(outer.Get.Card))
-    for _, c := range outer.Get.Card {
-        res = append(res, CardResult{
-            ID:          c.Additional.ID,
-            Name:        c.Name,
-            TypeLine:    c.TypeLine,
-            ManaCost:    c.ManaCost,
-            OracleText:  c.OracleText,
-            Colors:      c.Colors,
-            ImageNormal: c.Image,
-            Distance:    c.Additional.Distance,
-        })
-    }
-    return res, nil
-}
-
-func doGraphQL(ctx context.Context, baseURL, query string) (json.RawMessage, error) {
-    endpoint := strings.TrimRight(baseURL, "/") + "/v1/graphql"
-    body := map[string]string{"query": query}
-    b, _ := json.Marshal(body)
-    req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(b))
-    if err != nil {
-        return nil, err
-    }
-    req.Header.Set("Content-Type", "application/json")
-    httpClient := &http.Client{Timeout: 10 * time.Second}
-    resp, err := httpClient.Do(req)
-    if err != nil {
-        return nil, err
-    }
-    defer resp.Body.Close()
-    if resp.StatusCode != http.StatusOK {
-        data, _ := io.ReadAll(resp.Body)
-        return nil, fmt.Errorf("graphql status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
-    }
-    var wrapper graphQLResponse
-    dec := json.NewDecoder(resp.Body)
-    if err := dec.Decode(&wrapper); err != nil {
-        return nil, err
-    }
-    if len(wrapper.Errors) > 0 {
-        return nil, fmt.Errorf("graphql error: %s", wrapper.Errors[0].Message)
-    }
-    return wrapper.Data, nil
-}
+// Removed raw GraphQL helpers; use pkg/weaviateclient instead.
 
 func averageVectors(vectors [][]float64) []float64 {
     if len(vectors) == 0 {

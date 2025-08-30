@@ -17,6 +17,7 @@ import (
     "github.com/charmbracelet/bubbles/spinner"
     "github.com/charmbracelet/bubbles/textinput"
     "github.com/charmbracelet/lipgloss"
+    prg "github.com/domano/decktech/pkg/progress"
 )
 
 type config struct {
@@ -27,6 +28,7 @@ type config struct {
     Model         string `json:"model"`
     IncludeName   bool   `json:"include_name"`
     BatchSize     int    `json:"batch_size"`
+    TagsWeight    int    `json:"tags_weight"`
 }
 
 func defaultConfig() config {
@@ -40,6 +42,7 @@ func defaultConfig() config {
         Model:        "Alibaba-NLP/gte-modernbert-base",
         IncludeName:  false,
         BatchSize:    1000,
+        TagsWeight:   2,
     }
 }
 
@@ -65,21 +68,7 @@ func saveConfig(path string, c config) error {
     return os.Rename(tmp, path)
 }
 
-type checkpoint struct {
-    NextOffset int    `json:"next_offset"`
-    Total      int    `json:"total"`
-    LastOut    string `json:"last_batch_out"`
-}
-
-func readCheckpoint(path string) (checkpoint, error) {
-    var cp checkpoint
-    f, err := os.Open(path)
-    if err != nil { return cp, err }
-    defer f.Close()
-    dec := json.NewDecoder(f)
-    err = dec.Decode(&cp)
-    return cp, err
-}
+// Checkpoint handling moved to pkg/progress
 
 // UI
 type viewMode int
@@ -97,6 +86,7 @@ var menuItems = []menuItem{
     {"Run Single Batch", "Embed + ingest one batch using checkpoint"},
     {"Run Continuous", "Loop batches until completion"},
     {"Clean Embeddings", "Delete local batches/checkpoint and wipe Card class"},
+    {"Re-embed Full", "Reset checkpoint and run continuous with current config"},
     {"Show Status", "Display checkpoint progress"},
     {"Edit Config", "Update paths and parameters"},
     {"Quit", "Exit the CLI"},
@@ -110,6 +100,7 @@ const (
     actSingleBatch
     actContinuous
     actClean
+    actReembed
     actShowStatus
 )
 
@@ -148,6 +139,7 @@ func newModel(cfgPath string) model {
     inputs = append(inputs, mk("Out dir", c.OutDir))
     inputs = append(inputs, mk("Model", c.Model))
     inputs = append(inputs, mk("Batch size (int)", fmt.Sprintf("%d", c.BatchSize)))
+    inputs = append(inputs, mk("Tags weight (int)", fmt.Sprintf("%d", c.TagsWeight)))
     inc := textinput.New()
     inc.Placeholder = "Include name (true/false)"
     inc.SetValue(fmt.Sprintf("%v", c.IncludeName))
@@ -207,7 +199,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 if bs, err := fmt.Sscanf(m.inputs[5].Value(), "%d", &m.cfg.BatchSize); bs == 0 || err != nil {
                     m.cfg.BatchSize = 1000
                 }
-                m.cfg.IncludeName = strings.ToLower(strings.TrimSpace(m.inputs[6].Value())) == "true"
+                if tw, err := fmt.Sscanf(m.inputs[6].Value(), "%d", &m.cfg.TagsWeight); tw == 0 || err != nil {
+                    m.cfg.TagsWeight = 2
+                }
+                m.cfg.IncludeName = strings.ToLower(strings.TrimSpace(m.inputs[7].Value())) == "true"
                 _ = saveConfig(m.cfgPath, m.cfg)
                 m.mode = modeMenu
                 return m, nil
@@ -248,7 +243,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         return m, nil
     case tickMsg:
         // update progress from checkpoint periodically
-        cp, err := readCheckpoint(m.cfg.Checkpoint)
+        cp, err := prg.ReadCheckpoint(m.cfg.Checkpoint)
         if err == nil && cp.Total > 0 {
             m.progress.SetPercent(float64(cp.NextOffset) / float64(cp.Total))
         }
@@ -278,7 +273,7 @@ func (m model) View() string {
             fmt.Fprintln(b, line)
         }
         fmt.Fprintln(b)
-        cp, err := readCheckpoint(m.cfg.Checkpoint)
+        cp, err := prg.ReadCheckpoint(m.cfg.Checkpoint)
         if err == nil && cp.Total > 0 {
             fmt.Fprintf(b, "Progress: %d / %d (%.1f%%)\n", cp.NextOffset, cp.Total, 100*float64(cp.NextOffset)/float64(cp.Total))
         }
@@ -299,7 +294,7 @@ func (m model) View() string {
         if m.running { fmt.Fprintln(b, m.spinner.View()) }
         // Progress bar + numeric checkpoint
         fmt.Fprintln(b, m.progress.View())
-        if cp, err := readCheckpoint(m.cfg.Checkpoint); err == nil && cp.Total > 0 {
+        if cp, err := prg.ReadCheckpoint(m.cfg.Checkpoint); err == nil && cp.Total > 0 {
             pct := 100 * float64(cp.NextOffset) / float64(cp.Total)
             fmt.Fprintf(b, "Progress: %d / %d (%.1f%%)\n", cp.NextOffset, cp.Total, pct)
         }
@@ -332,21 +327,24 @@ func (m model) startAction(sel int) (tea.Model, tea.Cmd) {
     case 4: // clean embeddings
         m.mode, m.running, m.action = modeRun, true, actClean
         return m, tea.Batch(m.spinner.Tick, m.runClean(), tea.Tick(1*time.Second, func(time.Time) tea.Msg { return tickMsg{} }))
-    case 5: // show status
+    case 5: // re-embed full
+        m.mode, m.running, m.action = modeRun, true, actReembed
+        return m, tea.Batch(m.spinner.Tick, m.runReembedFull(), tea.Tick(1*time.Second, func(time.Time) tea.Msg { return tickMsg{} }))
+    case 6: // show status
         m.mode = modeRun
         m.running = false
         m.action = actShowStatus
         return m, func() tea.Msg {
-            cp, err := readCheckpoint(m.cfg.Checkpoint)
+            cp, err := prg.ReadCheckpoint(m.cfg.Checkpoint)
             if err != nil { return logMsg("No checkpoint found") }
             pct := 0.0
             if cp.Total > 0 { pct = 100*float64(cp.NextOffset)/float64(cp.Total) }
             return logMsg(fmt.Sprintf("Progress: %d / %d (%.1f%%)", cp.NextOffset, cp.Total, pct))
         }
-    case 6: // edit config
+    case 7: // edit config
         m.mode = modeConfig
         return m, nil
-    case 7:
+    case 8:
         return m, tea.Quit
     }
     return m, nil
@@ -370,10 +368,10 @@ func (m model) runApplySchema() tea.Cmd {
 func (m model) runSingleBatch() tea.Cmd {
     return func() tea.Msg {
         // embed one batch with current checkpoint/offset
-        env := []string{"MODEL=" + m.cfg.Model, "EMBED_QUIET=1"}
+        env := []string{"MODEL=" + m.cfg.Model, "EMBED_QUIET=1", fmt.Sprintf("EMBED_TAGS_WEIGHT=%d", m.cfg.TagsWeight)}
         if m.cfg.IncludeName { env = append(env, "INCLUDE_NAME=1") }
         // Build batch path by offset (read before)
-        cp, _ := readCheckpoint(m.cfg.Checkpoint)
+        cp, _ := prg.ReadCheckpoint(m.cfg.Checkpoint)
         offset := cp.NextOffset
         out := filepath.Join(m.cfg.OutDir, fmt.Sprintf("weaviate_batch.offset_%d.json", offset))
         embed := []string{"python3", "scripts/embed_cards.py", "--scryfall-json", m.cfg.ScryfallJSON,
@@ -387,7 +385,7 @@ func (m model) runSingleBatch() tea.Cmd {
 
 func (m model) runContinuous() tea.Cmd {
     return func() tea.Msg {
-        env := []string{"MODEL=" + m.cfg.Model, "WEAVIATE_URL=" + m.cfg.WeaviateURL, "OUTDIR=" + m.cfg.OutDir, "CHECKPOINT=" + m.cfg.Checkpoint, "EMBED_QUIET=1"}
+        env := []string{"MODEL=" + m.cfg.Model, "WEAVIATE_URL=" + m.cfg.WeaviateURL, "OUTDIR=" + m.cfg.OutDir, "CHECKPOINT=" + m.cfg.Checkpoint, "EMBED_QUIET=1", fmt.Sprintf("EMBED_TAGS_WEIGHT=%d", m.cfg.TagsWeight)}
         if m.cfg.IncludeName { env = append(env, "INCLUDE_NAME=1") }
         args := []string{"./scripts/embed_batches.sh", m.cfg.ScryfallJSON, fmt.Sprintf("%d", m.cfg.BatchSize)}
         return runProcess(args, env)
@@ -399,6 +397,15 @@ func (m model) runClean() tea.Cmd {
         env := []string{"WEAVIATE_URL=" + m.cfg.WeaviateURL, "OUTDIR=" + m.cfg.OutDir, "CHECKPOINT=" + m.cfg.Checkpoint}
         args := []string{"./scripts/clean_embeddings.sh"}
         return runProcess(args, env)
+    }
+}
+
+func (m model) runReembedFull() tea.Cmd {
+    return func() tea.Msg {
+        // Reset checkpoint then run continuous with current config
+        env := []string{"CHECKPOINT=" + m.cfg.Checkpoint}
+        if msg := runProcess([]string{"./scripts/reset_checkpoint.sh"}, env); isErr(msg) { return msg }
+        return m.runContinuous()()
     }
 }
 

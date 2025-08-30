@@ -30,6 +30,10 @@ build:
 build-tui:
 	go build -o decktech ./cmd/decktech
 
+## build-browser: Build the DB browser TUI (deckbrowser)
+build-browser:
+	go build -o deckbrowser ./cmd/deckbrowser
+
 ## run: Run the REST server (WEAVIATE_URL respected)
 run: build
 	WEAVIATE_URL=$(WEAVIATE_URL) ./similarityd
@@ -37,6 +41,18 @@ run: build
 ## tui: Run the TUI importer/batcher
 tui: build-tui
 	./decktech
+
+## browser: Run the DB browser TUI
+browser: build-browser
+	./deckbrowser
+
+## build-web: Build the SSR web server
+build-web:
+	go build -o deckweb ./cmd/web
+
+## web: Run the SSR web server on :8090
+web: build-web
+	WEAVIATE_URL=$(WEAVIATE_URL) ./deckweb
 
 ## weaviate-up: Start Weaviate via Docker Compose
 weaviate-up:

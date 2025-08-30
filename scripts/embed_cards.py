@@ -22,6 +22,7 @@ import math
 import os
 import sys
 from typing import Any, Dict, List, Optional
+import re
 
 
 def _is_quiet() -> bool:
@@ -104,6 +105,9 @@ def build_embed_text(card: Dict[str, Any], include_name: bool) -> str:
         oracle_text = " || ".join(parts)
     oracle_text = oracle_text or ""
 
+    # Mechanic-aware tags (domain signals)
+    tags = extract_tags(type_line, oracle_text)
+
     fields = []
     if include_name and name:
         fields.append(f"Name: {name}")
@@ -112,6 +116,12 @@ def build_embed_text(card: Dict[str, Any], include_name: bool) -> str:
     if mana_cost:
         fields.append(f"ManaCost: {mana_cost}")
     fields.append(f"Colors: {colors_str}")
+    if tags:
+        # Optionally emphasize tags
+        rep = int(os.environ.get("EMBED_TAGS_WEIGHT", "1"))
+        tag_line = f"Tags: {' '.join(tags)}"
+        for _ in range(max(1, rep)):
+            fields.append(tag_line)
     if oracle_text:
         fields.append(f"Oracle: {oracle_text}")
     return "\n".join(fields)
@@ -165,6 +175,73 @@ def extract_props(card: Dict[str, Any]) -> Dict[str, Any]:
         "image_normal": get_image(card, "normal"),
         "legalities": legalities_str,
     }
+
+
+# --- Domain tagger for MTG oracle text ---
+_RE_INT = re.compile(r"(\d+)")
+
+def normalize_text(s: str) -> str:
+    s = s or ""
+    # Unify synonyms to improve matching
+    s = s.replace("converted mana cost", "mana value")
+    return s
+
+def extract_tags(type_line: str, oracle_text: str) -> List[str]:
+    tl = (type_line or "").lower()
+    ot = normalize_text(oracle_text or "").lower()
+    tags: List[str] = []
+
+    # High-level types
+    for tkn, tag in [
+        ("enchantment", "type_enchantment"),
+        ("aura", "type_aura"),
+        ("equipment", "type_equipment"),
+        ("artifact", "type_artifact"),
+        ("creature", "type_creature"),
+        ("planeswalker", "type_planeswalker"),
+        ("legendary", "type_legendary"),
+    ]:
+        if tkn in tl or tkn in ot:
+            tags.append(tag)
+
+    # Common mechanics
+    if "search your library" in ot:
+        tags.append("tutor")
+        if "put" in ot and "onto the battlefield" in ot:
+            tags.append("tutor_to_battlefield")
+        elif "reveal" in ot or "put it into your hand" in ot:
+            tags.append("tutor_to_hand")
+
+    if "onto the battlefield" in ot:
+        tags.append("cheat_battlefield")
+
+    # Triggers/conditions
+    if "whenever" in ot and "attacks" in ot:
+        tags.append("attack_trigger")
+    if "whenever" in ot and "enters the battlefield" in ot:
+        tags.append("etb_trigger")
+
+    # Mana value thresholds
+    mv_match = re.search(r"mana value (\d+) or less", ot)
+    if mv_match:
+        tags.append(f"mv_leq_{mv_match.group(1)}")
+
+    # Color-related keywords sometimes indicate strategy
+    for kw, tg in [
+        ("aura", "kw_aura"), ("constellation", "kw_constellation"), ("mentor", "kw_mentor"),
+        ("equip", "kw_equip"), ("sagas", "kw_saga"), ("tutor", "kw_tutor"),
+    ]:
+        if kw in ot:
+            tags.append(tg)
+
+    # Deduplicate while preserving order
+    seen = set()
+    out: List[str] = []
+    for t in tags:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
 
 
 def main():

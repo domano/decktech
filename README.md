@@ -6,6 +6,7 @@ A local-first service that recommends Magic: The Gathering cards similar to one 
 - Embeddings: ModernBERT (`Alibaba-NLP/gte-modernbert-base`), normalized
 - Data: Scryfall bulk JSON
 - Backend: Go REST server
+  - Plus: Bubble Tea TUIs and an SSR web app for browsing/testing
 
 ## Architecture (At a Glance)
 
@@ -52,6 +53,19 @@ More detail in ARCHITECTURE.md.
   - If dependencies are missing, run: `go mod tidy` (downloads Bubble Tea packages)
   - Run: `./decktech`
   - Keys: `↑/↓` navigate, `Enter` run, `Esc` back, `q` quit
+  - Actions: Download, Apply Schema, Single Batch, Continuous, Clean Embeddings, Re‑embed Full, Show Status, Edit Config
+  - Config: Model, Batch size, Tags weight (mechanic emphasis), Include name
+
+- Optional: TUI for browsing/searching
+  - Build: `go build -o deckbrowser ./cmd/deckbrowser`
+  - Run: `./deckbrowser`
+  - Menu: `1` search by name, `2` browse list, `3` config, `q` quit
+  - Interactions: `Enter` run similar from selected, `n/p` page in browse, `Esc` back
+
+- Optional: Web UI (SSR)
+  - Build: `go build -o deckweb ./cmd/web`
+  - Run: `WEAVIATE_URL=http://localhost:8080 ./deckweb` then open http://localhost:8090
+  - Pages: `/` search form, `/cards` browse with pagination, `/search?q=...`, `/card?id=...` (detailed view with legalities/keywords and all printings), `/similar?id=...|name=...`
 
 - Test the endpoint
   - Get a few names from DB: `curl -sS localhost:8080/v1/graphql -H 'content-type: application/json' -d '{"query":"{ Get { Card(limit: 3) { name _additional { id } } } }"}'`
@@ -96,9 +110,15 @@ flowchart LR
   - `WEAVIATE_URL`: DB endpoint (default `http://localhost:8080`)
   - `MODEL`: override model (default `Alibaba-NLP/gte-modernbert-base`)
   - `INCLUDE_NAME=1`: include card name in embedding text (default excluded)
+  - `EMBED_TAGS_WEIGHT`: emphasize MTG mechanic tags in embeddings (default `2`; set via TUI)
   - `CHECKPOINT`: checkpoint JSON path (default `data/embedding_progress.json`)
   - `OUTDIR`: batch output directory (default `data`)
   - `MAX_STEPS`: stop after N batches (optional)
+
+### Mechanic‑Aware Embeddings
+- The embedder injects domain tags derived from `type_line` + `oracle_text` into the embedding input (e.g., `tutor`, `tutor_to_battlefield`, `attack_trigger`, `mv_leq_3`, `type_enchantment`).
+- Control emphasis with `EMBED_TAGS_WEIGHT` (repeat tags N times); helps align nuanced cards like “Zur the Enchanter” with similar tutor/cheat effects.
+- Toggle in TUI (Tags weight) or set env var when running batch scripts.
 
 ## REST API
 - `GET /healthz`: returns `ok`
@@ -115,6 +135,8 @@ flowchart LR
 - `scripts/embed_batches.sh`: loop over batches with checkpointing and ingest
 - `scripts/ingest_batch.sh`: post a batch file to Weaviate and report HTTP code
 - `scripts/make_dummy_vectors.py`: generate placeholder vectors for smoke tests
+- `scripts/clean_embeddings.sh`: remove local batches/checkpoint and try wiping the Card class
+- `scripts/reset_checkpoint.sh`: clear `embedding_progress.json` (start from offset 0)
 
 ## Code Map
 - Service entry: `cmd/similarityd/main.go`
@@ -127,6 +149,20 @@ flowchart LR
 - Embeddings + ingestion:
   - `scripts/embed_cards.py`, `scripts/embed_batches.sh`, `scripts/ingest_batch.sh`
 - TUI importer: `cmd/decktech` (Bubble Tea)
+- DB browser TUI: `cmd/deckbrowser`
+- Web SSR server: `cmd/web` (templates + assets embedded)
+- Shared packages:
+  - `pkg/weaviateclient`: typed GraphQL helpers for Card queries/search
+  - `pkg/progress`: read/write embedding checkpoint (`next_offset`, totals)
+
+## Makefile
+- `make weaviate-up` / `weaviate-down`: start/stop DB
+- `make schema-apply`: apply/verify schema
+- `make data-download`: pull Scryfall bulk
+- `make embed-sample` + `ingest-sample`: quick sample run
+- `make embed-batches BATCH=1000`: continuous embedding + ingest with checkpoint
+- `make tui` / `browser` / `web`: run UIs
+- `make clean-embeddings`: wipe local batches/checkpoint (and try DB class delete)
 
 ## Decisions
 - Embedding model: `Alibaba-NLP/gte-modernbert-base`

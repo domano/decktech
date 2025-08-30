@@ -50,6 +50,10 @@ Multi-face handling: face texts are concatenated for embedding input and stored 
 - Name is excluded from embeddings (reduces noise) but remains searchable as metadata.
 - Vectors are L2-normalized to support cosine similarity in Weaviate.
 
+### Mechanic‑Aware Tagging
+- The embedder adds domain tags inferred from rules text and types, e.g.: `tutor`, `tutor_to_battlefield`, `attack_trigger`, `etb_trigger`, `mv_leq_3`, `type_enchantment`, `kw_aura`.
+- Weighting via `EMBED_TAGS_WEIGHT` repeats the tag line N times to emphasize mechanics (set in TUI or env var). This improves nuanced effects (e.g., Zur’s attack‑triggered enchantment tutor).
+
 ## Ingestion Flow
 1) Download Scryfall bulk JSON (`scripts/download_scryfall.py`).
 2) Build embedding input string per card (handle multi-face, colors, etc.).
@@ -96,16 +100,6 @@ sequenceDiagram
   end
   S->>S: Average vectors + normalize
   S->>W: nearVector search
-- Example input string:
-  - `Type: Instant\nManaCost: {R}\nColors: Red\nOracle: Lightning Bolt deals 3 damage to any target.`
-
-```mermaid
-flowchart TD
-  A[Scryfall Card] -->|Build text| T[Type/Mana/Colors/Oracle]
-  T -->|ModernBERT| V[Vector (768)]
-  V -->|L2 norm| VN[Unit Vector]
-  VN -->|Batch| O[Weaviate Object]
-```
   W-->>S: Top-K with distance
   S-->>U: Results with similarity
 ```
@@ -134,8 +128,12 @@ Relevant code:
 
 TUI Orchestration
 - `cmd/decktech` provides a Bubble Tea CLI to run common workflows:
-  - Download Scryfall bulk, apply schema, single batch, continuous batches, edit config, show progress
+  - Download Scryfall bulk, apply schema, single batch, continuous batches, clean embeddings, re‑embed full, edit config, show progress
   - Streams script output and updates a progress bar from the checkpoint file
+
+DB Browsing UIs
+- `cmd/deckbrowser`: browse/search with LIKE and vector similarity from the terminal.
+- `cmd/web`: SSR site to search, browse, view detailed cards (images, legalities, keywords, set/rarity), list all printings by name, and run similarity queries in the browser.
 
 ```mermaid
 stateDiagram-v2
@@ -158,3 +156,4 @@ stateDiagram-v2
 - Fuzzy search: enhance name resolution or pre-compute a name index for partial matches.
 - GraphQL API: expose a custom GraphQL server that wraps Weaviate with additional logic (e.g., multi-vector queries).
 - Natural language: embed user text (e.g., “draw cards cost 2”) and search against card vectors.
+- Reranking: add an optional cross‑encoder to rerank vector hits for precision on complex mechanics.

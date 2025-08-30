@@ -1,0 +1,31 @@
+{{ define "base" }}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{{ .Title }}</title>
+    <link rel="stylesheet" href="/assets/style.css"/>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/cards">Browse</a>
+      </nav>
+      <form action="/search" method="get" class="search">
+        <input type="text" name="q" placeholder="Search card name"/>
+        <button type="submit">Search</button>
+      </form>
+    </header>
+    <main>
+      {{ if .Error }}<div class="error">{{ .Error }}</div>{{ end }}
+      {{ template "content" . }}
+    </main>
+    <footer>
+      <small>DeckTech — Local MTG embeddings</small>
+    </footer>
+  </body>
+  </html>
+{{ end }}
+

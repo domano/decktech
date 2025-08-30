@@ -1,0 +1,63 @@
+{{ define "content" }}
+<section class="detail">
+  {{ if .Card }}
+    <h1>{{ .Card.Name }}</h1>
+    <div class="detail-grid">
+      <div>
+        {{ if .Card.ImageNormal }}<img src="{{ .Card.ImageNormal }}" alt="{{ .Card.Name }}"/>
+        {{ else }}<div class="ph">No Image</div>{{ end }}
+      </div>
+      <div>
+        <p><strong>Type:</strong> {{ .Card.TypeLine }}</p>
+        <p><strong>Mana:</strong> {{ .Card.ManaCost }} {{ if gt .Card.CMC 0.0 }}<span class="muted">(MV {{ printf "%.0f" .Card.CMC }})</span>{{ end }}</p>
+        {{ if or .Card.Power .Card.Toughness }}
+        <p><strong>Stats:</strong> {{ .Card.Power }}/{{ .Card.Toughness }}</p>
+        {{ end }}
+        {{ if .Card.Colors }}
+        <p><strong>Colors:</strong> {{ join .Card.Colors "/" }}</p>
+        {{ end }}
+        {{ if .Card.ColorID }}
+        <p><strong>Color Identity:</strong> {{ join .Card.ColorID "/" }}</p>
+        {{ end }}
+        {{ if .Card.Keywords }}
+        <p><strong>Keywords:</strong> {{ join .Card.Keywords ", " }}</p>
+        {{ end }}
+        <p><strong>Set:</strong> {{ uc .Card.Set }} #{{ .Card.Collector }} — {{ .Card.Rarity }}; layout: {{ .Card.Layout }}</p>
+        {{ if .Card.Legalities }}
+        <div>
+          <strong>Legalities:</strong>
+          <ul>
+          {{ range $fmt, $status := .Card.Legalities }}<li>{{$fmt}}: {{$status}}</li>{{ end }}
+          </ul>
+        </div>
+        {{ end }}
+        <p><strong>Oracle:</strong><br/>{{ .Card.OracleText }}</p>
+        <p class="actions">
+          <a class="button" href="/similar?id={{ .Card.ScryfallID }}">Find Similar</a>
+          <a class="button" href="{{ scryfallURL .Card }}" target="_blank" rel="noopener">Open on Scryfall</a>
+        </p>
+      </div>
+    </div>
+    {{ if .Prints }}
+    <h2>Printings</h2>
+    <div class="grid">
+      {{ range .Prints }}
+      <div class="card">
+        <a href="/card?id={{ .ScryfallID }}">
+          {{ if .ImageNormal }}<img src="{{ .ImageNormal }}" alt="{{ .Set }} #{{ .Collector }}"/>
+          {{ else }}<div class="ph">No Image</div>{{ end }}
+          <div class="meta">
+            <strong>{{ uc .Set }}</strong> #{{ .Collector }} — {{ .Rarity }}
+          </div>
+        </a>
+        <div class="actions">
+          <a href="/similar?id={{ .ScryfallID }}">Similar</a>
+        </div>
+      </div>
+      {{ end }}
+    </div>
+    {{ end }}
+  {{ end }}
+</section>
+{{ end }}
+{{ template "base" . }}

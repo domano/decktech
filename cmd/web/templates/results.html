@@ -1,0 +1,46 @@
+{{ define "content" }}
+<section>
+  <h1>Results — {{ .Query }}</h1>
+  <form method="get" class="filters">
+    <input type="hidden" name="name" value="{{ .Query }}"/>
+    <label><input type="checkbox" name="legendary" value="1"/> Legendary</label>
+    <label>Type: <input type="text" name="type" placeholder="Creature/Enchantment"/></label>
+    <label>Colors: <input type="text" name="colors" placeholder="W,U,B,R,G"/></label>
+    <label>MV ≥ <input type="number" name="cmc_min" min="0"/></label>
+    <label>MV ≤ <input type="number" name="cmc_max" min="0"/></label>
+    <label>Sort: 
+      <select name="sort">
+        <option value="similarity">Similarity</option>
+        <option value="cmc">Mana Value</option>
+        <option value="name">Name</option>
+      </select>
+    </label>
+    <label>Order:
+      <select name="order">
+        <option value="desc">Desc</option>
+        <option value="asc">Asc</option>
+      </select>
+    </label>
+    <button type="submit">Apply</button>
+  </form>
+  <div class="grid">
+  {{ range .Cards }}
+    <div class="card">
+      <a href="/card?id={{ .ScryfallID }}">
+        {{ if .ImageNormal }}<img src="{{ .ImageNormal }}" alt="{{ .Name }}"/>
+        {{ else }}<div class="ph">No Image</div>{{ end }}
+        <div class="meta">
+          <strong>{{ .Name }}</strong>
+          <div class="type">{{ .TypeLine }}</div>
+          {{ if gt .Similarity 0.0 }}<div class="sim">sim {{ printf "%.3f" .Similarity }}</div>{{ end }}
+        </div>
+      </a>
+      <div class="actions">
+        <a href="/similar?id={{ .ScryfallID }}">Similar</a>
+      </div>
+    </div>
+  {{ end }}
+  </div>
+</section>
+{{ end }}
+{{ template "base" . }}

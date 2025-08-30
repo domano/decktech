@@ -2,31 +2,36 @@
 
 ## Project Structure & Module Organization
 - `cmd/similarityd/`: Go REST server (`/similar`, `/healthz`, `/config`).
-- `scripts/`: Data, embedding, and ingestion scripts (Python/Bash).
-- `weaviate/`: Schema (`schema.json`).
-- `ops/`: Local infra (Docker Compose for Weaviate).
+- `cmd/decktech/`: Bubble Tea TUI for import/batching (Download, Schema, Single/Continuous, Clean, Re-embed, Config).
+- `cmd/deckbrowser/`: Bubble Tea TUI to browse/search and run similarity queries.
+- `cmd/web/`: SSR web app (search, browse, detailed card view with images/legalities/keywords/sets, all printings, similar).
+- `scripts/`: Data, embedding, ingestion, and maintenance scripts.
+- `weaviate/`: Schema (`schema.json`). `ops/`: Docker Compose for Weaviate.
 - `docs/`, `README.md`, `ARCHITECTURE.md`: Design, setup, and flows.
+- `pkg/weaviateclient/`: shared typed GraphQL client for Card queries/search.
+- `pkg/progress/`: embedding checkpoint utilities (`next_offset`, totals).
 
 ## Build, Test, and Development Commands
-- Start DB: `docker compose -f ops/docker-compose.weaviate.yml up -d`
-- Apply schema: `./scripts/apply_schema.sh`
-- Download data: `python scripts/download_scryfall.py -k oracle_cards -o data/oracle-cards.json`
-- Embed (sample): `python scripts/embed_cards.py --scryfall-json data/oracle-cards.json --batch-out data/weaviate_batch.sample.json --limit 200 --offset 0 --checkpoint data/embedding_progress.json`
-- Batch loop: `./scripts/embed_batches.sh data/oracle-cards.json 1000`
-- Ingest: `./scripts/ingest_batch.sh data/weaviate_batch.sample.json`
-- Build/run service: `go build -o similarityd ./cmd/similarityd && WEAVIATE_URL=http://localhost:8080 ./similarityd`
-- Smoke tests:
-  - Names: `curl -sS localhost:8080/v1/graphql -H 'content-type: application/json' -d '{"query":"{ Get { Card(limit: 3) { name } } }"}'`
-  - Similar: `curl -sS -X POST localhost:8088/similar -H 'content-type: application/json' -d '{"names":["Wings of Aesthir"],"k":5}'`
+- DB up/down: `make weaviate-up` / `make weaviate-down`
+- Schema: `make schema-apply`
+- Data: `make data-download`
+- Sample embed+ingest: `make embed-sample ingest-sample`
+- Continuous batches: `make embed-batches BATCH=1000` (resumes via checkpoint)
+- Clean/restart: `make clean-embeddings` (wipes local batches/checkpoint; suggests DB reset)
+- Server: `make run` (uses `WEAVIATE_URL`)
+- TUIs: `make tui` (importer) / `make browser` (DB browser)
+- Web SSR: `make web` (runs on :8090)
 
 ## Coding Style & Naming Conventions
-- Go: `gofmt`-formatted, idiomatic packages; env via `WEAVIATE_URL`.
-- Python: PEP 8; small, pure functions; avoid global state; keep scripts executable.
-- Files/dirs: lowercase with hyphens/underscores; JSON config is minified unless human-edited docs.
+- Go: `gofmt`-formatted; small handlers/helpers; env via `WEAVIATE_URL`.
+- Bubble Tea: simple Update/View; stream logs with `tea.Println`; avoid blocking the UI.
+- Python: PEP 8; pure functions; avoid global state; scripts runnable standalone.
+- Templates: minimal HTML/CSS; avoid inline JS.
+- Files/dirs: lowercase with hyphens/underscores; JSON config minified unless hand-edited.
 
 ## Testing Guidelines
-- Current: manual/e2e smoke tests (GraphQL readiness, `/similar`).
-- Additions welcome: unit tests for `cmd/similarityd` (vector averaging, query building) and fixture-based tests for scripts.
+- Current: manual/e2e via TUIs and web (GraphQL readiness, `/similar`, browse/search, similar from card pages).
+- Additions welcome: unit tests for `cmd/similarityd` (vector averaging, query building) + script fixtures for embed/extract tags.
 - Test naming: `<package>_test.go`, `test_*` functions; keep tests fast and deterministic.
 
 ## Commit & Pull Request Guidelines
@@ -36,8 +41,9 @@
 
 ## Security & Configuration Tips
 - No secrets required; service uses `WEAVIATE_URL` (default `http://localhost:8080`).
-- Weaviate must use `vectorizer: none` and cosine distance (see `weaviate/schema.json`).
+- Weaviate: `vectorizer: none`, cosine distance (see `weaviate/schema.json`).
+- Embedding config: Tags weight emphasized via `EMBED_TAGS_WEIGHT` (configurable in TUI).
 - Large downloads (models, bulk JSON) — commit only code and small configs, not data.
 
 ## Architecture Overview
-- See `ARCHITECTURE.md` for diagrams and flows; core service code lives in `cmd/similarityd/main.go` (name lookup → vector average → nearVector).
+- See `ARCHITECTURE.md` for diagrams and flows; core service code lives in `cmd/similarityd/main.go` (name lookup → vector average → nearVector). UIs: `cmd/decktech`, `cmd/deckbrowser`, `cmd/web`.
