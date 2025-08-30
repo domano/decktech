@@ -1,0 +1,36 @@
+{
+  "classes": [
+    {
+      "class": "Card",
+      "description": "Magic: The Gathering card with external vector embedding.",
+      "vectorizer": "none",
+      "vectorIndexType": "hnsw",
+      "moduleConfig": {},
+      "properties": [
+        { "name": "scryfall_id", "dataType": ["text"], "description": "Scryfall UUID" },
+        { "name": "name", "dataType": ["text"] },
+        { "name": "mana_cost", "dataType": ["text"] },
+        { "name": "cmc", "dataType": ["number"] },
+        { "name": "type_line", "dataType": ["text"] },
+        { "name": "oracle_text", "dataType": ["text"] },
+        { "name": "power", "dataType": ["text"] },
+        { "name": "toughness", "dataType": ["text"] },
+        { "name": "colors", "dataType": ["text[]"] },
+        { "name": "color_identity", "dataType": ["text[]"] },
+        { "name": "keywords", "dataType": ["text[]"] },
+        { "name": "edhrec_rank", "dataType": ["int"] },
+        { "name": "set", "dataType": ["text"] },
+        { "name": "collector_number", "dataType": ["text"] },
+        { "name": "rarity", "dataType": ["text"] },
+        { "name": "layout", "dataType": ["text"] },
+        { "name": "image_small", "dataType": ["text"] },
+        { "name": "image_normal", "dataType": ["text"] },
+        { "name": "legalities", "dataType": ["text"], "description": "JSON string of legalities" }
+      ],
+      "vectorIndexConfig": {
+        "distance": "cosine"
+      }
+    }
+  ]
+}
+
