@@ -1,0 +1,37 @@
+# Go build artifacts
+/similarityd
+*.test
+*.out
+coverage.out
+
+# Build outputs
+/bin/
+/build/
+/dist/
+
+# Python caches and environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+.mypy_cache/
+.pytest_cache/
+
+# Generated data and batches
+data/
+!data/.gitkeep
+
+# Logs and temp
+*.log
+tmp/
+*.tmp
+
+# Editor/OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
